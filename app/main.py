@@ -25,4 +25,4 @@ def book_demo(data: DemoRequest):
         )
         return {"message": "Demo request submitted successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to submit demo request")
