@@ -1,41 +1,34 @@
 import os
-import smtplib
-from email.message import EmailMessage
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
-
-ENV = os.getenv("ENV", "local")
+import requests
 
 def send_demo_request_email(name, email, mobile_number, message):
-    content = f"""
-        New Demo Request
-        
-        Name: {name}
-        Email: {email}
-        Mobile: {mobile_number}
-        Message: {message}
+    url = "https://api.brevo.com/v3/smtp/email"
+
+    payload = {
+        "sender": {
+            "email": os.getenv("FROM_EMAIL"),
+            "name": os.getenv("FROM_NAME")
+        },
+        "to": [
+            {"email": os.getenv("ADMIN_EMAIL")}
+        ],
+        "subject": "New Demo Request",
+        "htmlContent": f"""
+            <h3>New Demo Request</h3>
+            <p><b>Name:</b> {name}</p>
+            <p><b>Email:</b> {email}</p>
+            <p><b>Mobile:</b> {mobile_number}</p>
+            <p><b>Message:</b><br>{message}</p>
         """
-    if ENV == "local":
-        msg = EmailMessage()
-        msg["Subject"] = "New Demo Request"
-        msg["From"] = os.getenv("SMTP_USER")
-        msg["To"] = os.getenv("ADMIN_EMAIL")
-        msg.set_content(content)
+    }
 
-        with smtplib.SMTP(os.getenv("SMTP_HOST"), int(os.getenv("SMTP_PORT"))) as server:
-            server.starttls()
-            server.login(
-                os.getenv("SMTP_USER"),
-                os.getenv("SMTP_PASSWORD")
-            )
-            server.send_message(msg)
+    headers = {
+        "accept": "application/json",
+        "api-key": os.getenv("BREVO_API_KEY"),
+        "content-type": "application/json"
+    }
 
-    else:
-        sg = SendGridAPIClient(os.getenv("SENDGRID_API_KEY"))
-        mail = Mail(
-            from_email=os.getenv("FROM_EMAIL"),
-            to_emails=os.getenv("ADMIN_EMAIL"),
-            subject="New Demo Request",
-            plain_text_content=content
-        )
-        sg.send(mail)
+    response = requests.post(url, json=payload, headers=headers)
+
+    if response.status_code not in (200, 201):
+        raise Exception(response.text)
