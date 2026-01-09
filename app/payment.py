@@ -8,6 +8,7 @@ from app.utils.currency import get_cad_to_inr_rate
 from fastapi import Request
 from razorpay.errors import SignatureVerificationError
 from app.config import RAZORPAY_WEBHOOK_SECRET
+import re
 
 router = APIRouter(prefix="/payment", tags=["Payment"])
 
@@ -18,7 +19,8 @@ client = razorpay.Client(
 PLANS_CAD = {
     "group": 270,
     "individual": 320,
-    "intensive": 430
+    "intensive": 430,
+    "speaking": 150,
 }
 
 @router.post("/enroll")
@@ -34,22 +36,33 @@ def enroll(data: EnrollRequest):
     amount_inr = amount_cad * cad_to_inr
     amount_paise = int(amount_inr * 100)
 
-    payment_link = client.payment_link.create({
+    customer = {}
+    if data.name:
+        customer["name"] = data.name
+    if data.email:
+        customer["email"] = data.email
+
+    if data.phone:
+        phone = re.sub(r"\D", "", data.phone)  # keep digits only
+        if 8 <= len(phone) <= 14:
+            customer["contact"] = phone
+
+    payload = {
         "amount": amount_paise,
         "currency": "INR",
         "description": f"{plan.title()} French Class Tuition",
-        "customer": {
-            "name": data.name,
-            "email": data.email,
-            "contact": data.phone
-        },
         "notify": {
             "sms": True,
             "email": True
         },
         "callback_url": "https://yorkcentrefrench.com/payment-success",
         "callback_method": "get"
-    })
+    }
+
+    if customer:
+        payload["customer"] = customer
+
+    payment_link = client.payment_link.create(payload)
 
     return {
         "plan": plan,
