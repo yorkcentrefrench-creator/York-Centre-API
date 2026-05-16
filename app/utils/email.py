@@ -1,34 +1,38 @@
 import os
-import requests
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
 
 def send_demo_request_email(name, email, mobile_number, message):
-    url = "https://api.brevo.com/v3/smtp/email"
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_port = int(os.getenv("SMTP_PORT", 587))
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+    from_email = os.getenv("FROM_EMAIL")
+    from_name = os.getenv("FROM_NAME", "YorkCentre")
+    admin_email = os.getenv("ADMIN_EMAIL")
 
-    payload = {
-        "sender": {
-            "email": os.getenv("FROM_EMAIL"),
-            "name": os.getenv("FROM_NAME")
-        },
-        "to": [
-            {"email": os.getenv("ADMIN_EMAIL")}
-        ],
-        "subject": "New Demo Request",
-        "htmlContent": f"""
-            <h3>New Demo Request</h3>
-            <p><b>Name:</b> {name}</p>
-            <p><b>Email:</b> {email}</p>
-            <p><b>Mobile:</b> {mobile_number}</p>
-            <p><b>Message:</b><br>{message}</p>
-        """
-    }
+    # Build the email
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "New Demo Request"
+    msg["From"] = f"{from_name} <{from_email}>"
+    msg["To"] = admin_email
 
-    headers = {
-        "accept": "application/json",
-        "api-key": os.getenv("BREVO_API_KEY"),
-        "content-type": "application/json"
-    }
+    html_content = f"""\
+    <h3>New Demo Request</h3>
+    <p><b>Name:</b> {name}</p>
+    <p><b>Email:</b> {email}</p>
+    <p><b>Mobile:</b> {mobile_number}</p>
+    <p><b>Message:</b><br>{message}</p>
+    """
 
-    response = requests.post(url, json=payload, headers=headers)
+    msg.attach(MIMEText(html_content, "html"))
 
-    if response.status_code not in (200, 201):
-        raise Exception(response.text)
+    # Send via SMTP
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.starttls()
+        server.login(smtp_user, smtp_password)
+        server.sendmail(from_email, admin_email, msg.as_string())
+
+    print(f"✅ Demo request email sent to {admin_email}")
