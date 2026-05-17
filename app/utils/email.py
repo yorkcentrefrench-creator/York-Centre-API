@@ -1,23 +1,12 @@
 import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import requests
 
 
 def send_demo_request_email(name, email, mobile_number, message):
-    smtp_host = os.getenv("SMTP_HOST")
-    smtp_port = int(os.getenv("SMTP_PORT", 587))
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_password = os.getenv("SMTP_PASSWORD")
+    api_key = os.getenv("BREVO_API_KEY")
     from_email = os.getenv("FROM_EMAIL")
     from_name = os.getenv("FROM_NAME", "YorkCentre")
     admin_email = os.getenv("ADMIN_EMAIL")
-
-    # Build the email
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "New Demo Request"
-    msg["From"] = f"{from_name} <{from_email}>"
-    msg["To"] = admin_email
 
     html_content = f"""\
     <h3>New Demo Request</h3>
@@ -27,12 +16,26 @@ def send_demo_request_email(name, email, mobile_number, message):
     <p><b>Message:</b><br>{message}</p>
     """
 
-    msg.attach(MIMEText(html_content, "html"))
+    payload = {
+        "sender": {"name": from_name, "email": from_email},
+        "to": [{"email": admin_email}],
+        "subject": "New Demo Request",
+        "htmlContent": html_content,
+    }
 
-    # Send via SMTP
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.starttls()
-        server.login(smtp_user, smtp_password)
-        server.sendmail(from_email, admin_email, msg.as_string())
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "api-key": api_key,
+    }
+
+    response = requests.post(
+        "https://api.brevo.com/v3/smtp/email",
+        json=payload,
+        headers=headers,
+    )
+
+    if response.status_code not in (200, 201):
+        raise Exception(f"Brevo API error {response.status_code}: {response.text}")
 
     print(f"✅ Demo request email sent to {admin_email}")
