@@ -4,8 +4,8 @@ from typing import Optional
 class DemoRequest(BaseModel):
     name: str
     email: str
-    mobile_number: int
-    message: str
+    mobile_number: str
+    message: Optional[str] = ""
 
 class EnrollRequest(BaseModel):
     plan: str
