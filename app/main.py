@@ -1,3 +1,5 @@
+import threading
+
 from fastapi import FastAPI, HTTPException
 from starlette.middleware.cors import CORSMiddleware
 
@@ -26,14 +28,11 @@ def root():
 # Demo booking endpoint
 @app.post("/book-demo")
 def book_demo(data: DemoRequest):
-    try:
-        send_demo_request_email(
-            data.name,
-            data.email,
-            data.mobile_number,
-            data.message
-        )
-        return {"message": "Demo request submitted successfully"}
-    except Exception as e:
-        print("EMAIL ERROR:", e)
-        return {"message": "Demo request submitted successfully"}
+    # Send email in background so the API responds instantly
+    thread = threading.Thread(
+        target=send_demo_request_email,
+        args=(data.name, data.email, data.mobile_number, data.message),
+        daemon=True,
+    )
+    thread.start()
+    return {"message": "Demo request submitted successfully"}
