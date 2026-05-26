@@ -1,35 +1,41 @@
-import os
-import socket
-import smtplib
 import logging
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import requests
+from app.config import BREVO_API_KEY, FROM_EMAIL, FROM_NAME, ADMIN_EMAIL, EMAIL_ENABLED
 
 logger = logging.getLogger(__name__)
 
-
-def _resolve_ipv4(host, port):
-    """Force IPv4 resolution — fixes '[Errno 101] Network is unreachable' on hosts without IPv6."""
-    addr_info = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
-    if not addr_info:
-        raise OSError(f"Could not resolve {host} to an IPv4 address")
-    return addr_info[0][4][0]  # returns the IPv4 IP string
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 
 def send_demo_request_email(name, email, mobile_number, message):
-    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", 587))
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_password = os.getenv("SMTP_PASSWORD")
-    from_email = os.getenv("FROM_EMAIL")
-    from_name = os.getenv("FROM_NAME", "YorkCentre")
-    admin_email = os.getenv("ADMIN_EMAIL")
+    """Send demo request email via Brevo HTTP API.
+    Render blocks all SMTP ports, so we use Brevo's HTTPS API instead.
 
-    # Build the email
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "New Demo Request"
-    msg["From"] = f"{from_name} <{from_email}>"
-    msg["To"] = admin_email
+    Returns:
+        tuple: (success: bool|None, message: str)
+            - True: email sent
+            - False: email was configured but sending failed
+            - None: email sending disabled or not configured
+    """
+
+    if not EMAIL_ENABLED:
+        info_msg = "Email sending is disabled by configuration. Demo request accepted without sending email."
+        logger.info(info_msg)
+        return None, info_msg
+
+    # Validate required configuration
+    missing_config = []
+    if not BREVO_API_KEY:
+        missing_config.append("BREVO_API_KEY")
+    if not FROM_EMAIL:
+        missing_config.append("FROM_EMAIL")
+    if not ADMIN_EMAIL:
+        missing_config.append("ADMIN_EMAIL")
+
+    if missing_config:
+        error_msg = f"Email configuration missing: {', '.join(missing_config)}. Set these in Render environment variables or disable email with EMAIL_ENABLED=false."
+        logger.error(error_msg)
+        return False, error_msg
 
     html_content = f"""\
     <h3>New Demo Request</h3>
@@ -39,24 +45,34 @@ def send_demo_request_email(name, email, mobile_number, message):
     <p><b>Message:</b><br>{message}</p>
     """
 
-    msg.attach(MIMEText(html_content, "html"))
+    payload = {
+        "sender": {"name": FROM_NAME, "email": FROM_EMAIL},
+        "to": [{"email": ADMIN_EMAIL, "name": "Admin"}],
+        "subject": "New Demo Request",
+        "htmlContent": html_content,
+    }
 
-    # Resolve to IPv4 to avoid IPv6 connectivity issues on cloud hosts
-    ipv4_host = _resolve_ipv4(smtp_host, smtp_port)
-    logger.info(f"Resolved {smtp_host} -> {ipv4_host} (IPv4)")
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "api-key": BREVO_API_KEY,
+    }
 
-    if smtp_port == 465:
-        # SSL
-        with smtplib.SMTP_SSL(ipv4_host, smtp_port, timeout=10) as server:
-            server.login(smtp_user, smtp_password)
-            server.sendmail(from_email, admin_email, msg.as_string())
-    else:
-        # STARTTLS (port 587)
-        with smtplib.SMTP(ipv4_host, smtp_port, timeout=10) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(smtp_user, smtp_password)
-            server.sendmail(from_email, admin_email, msg.as_string())
-
-    logger.info(f"✅ Demo request email sent to {admin_email}")
+    try:
+        response = requests.post(BREVO_API_URL, json=payload, headers=headers, timeout=10)
+        if response.status_code == 201:
+            success_msg = f"Email sent to {ADMIN_EMAIL}"
+            logger.info(f"✅ {success_msg}")
+            return True, success_msg
+        else:
+            error_msg = f"Brevo API error: {response.status_code} - {response.text}"
+            logger.error(error_msg)
+            return False, error_msg
+    except requests.Timeout:
+        error_msg = "Email send timeout - Brevo API not responding"
+        logger.error(error_msg)
+        return False, error_msg
+    except Exception as e:
+        error_msg = f"Email send failed: {str(e)}"
+        logger.error(error_msg)
+        return False, error_msg
